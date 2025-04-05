@@ -1,0 +1,1 @@
+Make plugins support and api for pluging to manage server data, server state and to make possible add new commands
