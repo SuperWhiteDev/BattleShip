@@ -74,6 +74,8 @@ class User:
             self.logger.error(f"Disconnecting user because is in black list.")
             self.disconnect_user(True)
             return
+        
+        self.send_data("CONNECTED")
 
     def recieve_data(self) -> str:
         if not self.is_connected or self.conn.fileno() != -1:
@@ -127,6 +129,8 @@ class User:
                         self.server.server_data.users.update_login(self.name, self.id)
                         self.logger.info("The user has successfully logged in")
                         return True
+                elif password == "PING":
+                    continue
                 else:
                     self.send_data("UNCORRECT")
                 attemptions += 1
@@ -145,8 +149,11 @@ class User:
                 self.server.server_data.users.add(self.name, self.id, password)
                 self.logger.info("The user has successfully signed in")
                 return True
+            elif password == "PING":
+                continue
             else:
                 self.send_data("UNCORRECT")
+                attemptions += 1
         return False
         
     def disconnect_user(self, is_banned = False):

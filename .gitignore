@@ -1,5 +1,5 @@
-Server/logs.log
+logs.log
 
-Client/config.json
+config.json
 
 __pycache__/

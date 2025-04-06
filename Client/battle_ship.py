@@ -6,6 +6,7 @@ from config import Config
 from utils import clear_console
 from network import Network
 from user import User
+from packet import Packet
 
 class BattleShip:
     def __init__(self) -> None:
@@ -67,19 +68,6 @@ class BattleShip:
             except Exception:
                 continue
 
-    def play_game(self):
-        if not self.user.is_valid():
-            self.create_user()
-        
-        server_ip, server_port = self.get_server()
-
-        self.connection = Network(self.user)
-        self.connection.connect(server_ip, server_port)
-        
-        if self.connection.connected():
-            Thread(target=self.connection.handle).start()
-            self.handle_game()
-
     def create_user(self):
         self.user.set_name(input("Enter your username: "))
 
@@ -121,21 +109,72 @@ class BattleShip:
 
         self.config.servers.add_server(name, ip, port)
 
-    def handle_game(self):
-        while self.connection.last_connection_status == "UNDEFINED" or self.connection.last_connection_status == "DISCONNECTED":
-            sleep(1.0)
-
-            if self.connection.last_connection_status != "DISCONNECTED":
-                print("Game running... (type 'disconnect' to leave from the server)")
-
-                while connected_to_server:
-                    user_input = input("> ").strip().lower()
-                    if user_input == "disconnect":
-                        connected_to_server = False
-                        break
+    def play_game(self):
+        if not self.user.is_valid():
+            self.create_user()
         
-                while self.connection.last_connection_status != "DISCONNECTED":
-                    sleep(1.0)
+        server_ip, server_port = self.get_server()
+
+        self.connection = Network(self.user, self.server_request_handler)
+        self.connection.connect(server_ip, server_port)
+        
+        if self.connection.connected():
+            print("Connected!")
+            #Thread(target=self.connection.handle).start()
+            self.handle_game()
+        else:
+            print("Not connected")
+
+    def handle_game(self):
+        print("Game running... (type 'disconnect' to leave from the server)")
+
+        while self.connection.connected():
+            #user_input = input("> ").strip().lower()
+            #if user_input == "disconnect":
+            #    self.connection.disconnect()
+                sleep(1)
+
+    def server_request_handler(self, request : Packet):
+        if request.code == Packet.Code.OK:
+            sleep(5)
+        elif request == "BANNED":
+            print("You have been banned on this server.")
+        elif request.startswith("Session started"):
+            self.handle_session_connection(int(response.split("ID=")[1]))
+        elif request == "Session closed":
+            print("Game stopped.")
+        elif request == "REGISTER_REQUIRED":
+            print("To connect to this server you need to register your name on it so that no one else can connect using your name")
+                
+            while True:
+                password = input("Enter password: ")
+                if password == "":
+                    continue
+
+                response = self.connection.get(f"PASSWORD {password}")
+
+                if response == "OK":
+                    print("Succesfully connected to the server")
+                    break
+                elif response == "UNCORRECT":
+                    print("Not correct credintials. Try again.")
+        elif request == "PASSWORD_REQUIRED":
+            while True:
+                password = input("Enter the password for this account: ")
+                if password == "":
+                    continue
+
+                response = self.connection.get(f"PASSWORD {password}")
+
+                if response == "OK":
+                    print("Succesfully connected to the server")
+                    break
+                elif response == "UNCORRECT":
+                    print("Not correct. Try again.")
+        else:
+            return None
+    def handle_session_connection(self, session_id):
+            print(f"Connected to session #{session_id}.\nStarting game.")
 
 def main() -> int:
     bs = BattleShip()
