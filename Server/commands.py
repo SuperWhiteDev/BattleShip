@@ -67,7 +67,7 @@ Example:
         if len(users) > 0:
             output += "Connected users:\n"
             for i, user in enumerate(users):
-                output += f"{i + 1}. {user.name.capitalize()} (ID: {user.id}, IP: {user.ip}) Logged in: {user.is_logged()}\n"
+                output += f"{i + 1}. {user.name.capitalize()} (ID: {user.id}, IP: {user.get_ip_address()}) Logged in: {user.is_logged()}\n"
             output += "\n"
         else:
             output += "No connected clients"

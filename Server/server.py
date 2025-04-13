@@ -79,15 +79,9 @@ class Server:
             while not self.server_stop and self.server_running:
                 try:
                     conn, addr = self.server_socket.accept()
-                    
-                    if len(User.get_users(self)) < MAX_USERS:
-                        user = User(self, conn, addr)
-                        user.handle_user()
-                    else:
-                        Log.warning("The connection request was rejected because the maximum number of users has been reached.")
-                        conn.send("REACHED_USERS_LIMIT".encode("UTF-8"))
-                        sleep(0.01)
-                        conn.close()
+
+                    user = User(self, conn, addr)
+                    user.handle_user()
                 except socket.timeout:
                     continue
                 except OSError:

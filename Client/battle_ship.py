@@ -44,11 +44,19 @@ class BattleShip:
 
     def settings_menu(self):
         def option_me():
-            for i, (option, value) in enumerate(self.config.items()):
+            options = {"Name": self.user.name}
+            
+            for i, (option, value) in enumerate(options.items()):
                 print(f"{i+1}. {option.capitalize()} - {value}.")
         
             inp = input("Enter what option you want to change: ").strip().lower()
-            if inp == "name":
+
+            try:
+                index = int(inp)
+            except ValueError:
+                index = -1
+
+            if inp == "name" or index == 1:
                 self.user.set_name(input("Enter your new name: ").strip())
 
         options = ["Me"]
@@ -65,7 +73,8 @@ class BattleShip:
                 
                 if option == options[0].lower() or int(option) == 1:
                     option_me()
-            except Exception:
+            except Exception as e:
+                print(e)
                 continue
 
     def create_user(self):
@@ -119,31 +128,52 @@ class BattleShip:
         self.connection.connect(server_ip, server_port)
         
         if self.connection.connected():
-            print("Connected!")
             #Thread(target=self.connection.handle).start()
             self.handle_game()
         else:
             print("Not connected")
 
     def handle_game(self):
-        print("Game running... (type 'disconnect' to leave from the server)")
-
+        started = False
         while self.connection.connected():
-            #user_input = input("> ").strip().lower()
-            #if user_input == "disconnect":
-            #    self.connection.disconnect()
+            if not self.connection.authorised():
+                sleep(1.0)
+                continue
+            else:
+                if not started:
+                    started = True
+                    print("Game running... (type 'disconnect' to leave from the server)")
+
+            user_input = input("> ").strip().lower()
+            if user_input == "disconnect":
+                self.connection.disconnect()
                 sleep(1)
 
     def server_request_handler(self, request : Packet):
         if request.code == Packet.Code.OK:
+            self.connection.set_authorised(True)
             sleep(5)
-        elif request == "BANNED":
+        elif request.code == Packet.Code.STATUS:
+            self.server_handle_user_connection_status(request.data)
+        #elif request.startswith("Session started"):
+        #    self.handle_session_connection(int(response.split("ID=")[1]))
+        #elif request == "Session closed":   
+        #    print("Game stopped.")
+        elif request.code == Packet.Code.UNDEFINED:
+            self.connection.disconnect()
+            return None
+        else:
+            print(f"Unknown code from server: {request.code}")
+        
+        return None
+            
+    def server_handle_user_connection_status(self, status : Network.UserConnectionStatus):
+        #print(f"Status is {status}")
+        if status == Network.UserConnectionStatus.BANNED.value:
             print("You have been banned on this server.")
-        elif request.startswith("Session started"):
-            self.handle_session_connection(int(response.split("ID=")[1]))
-        elif request == "Session closed":
-            print("Game stopped.")
-        elif request == "REGISTER_REQUIRED":
+        if status == Network.UserConnectionStatus.DISCONNECTED.value:
+            print("You has been disconnected from the server.")
+        elif status == Network.UserConnectionStatus.REGISTER_REQUIRED.value:
             print("To connect to this server you need to register your name on it so that no one else can connect using your name")
                 
             while True:
@@ -151,28 +181,41 @@ class BattleShip:
                 if password == "":
                     continue
 
-                response = self.connection.get(f"PASSWORD {password}")
+                response = self.connection.get(Packet(Packet.Code.PASSWORD, {"password": password}))
 
-                if response == "OK":
+                if response.code == Packet.Code.OK:
                     print("Succesfully connected to the server")
+                    self.connection.set_authorised(True)
                     break
-                elif response == "UNCORRECT":
-                    print("Not correct credintials. Try again.")
-        elif request == "PASSWORD_REQUIRED":
+                elif response.code == Packet.Code.ERROR:
+                    if isinstance(response.data, dict) and "error" in response.data:
+                        print(response.data["error"])
+                    else:
+                        print("Not correct. Try again.")
+                else:
+                    return None
+        elif status == Network.UserConnectionStatus.AUTHORIZATION_REQUIRED.value:
             while True:
                 password = input("Enter the password for this account: ")
                 if password == "":
                     continue
 
-                response = self.connection.get(f"PASSWORD {password}")
+                response = self.connection.get(Packet(Packet.Code.PASSWORD, {"password": password}))
 
-                if response == "OK":
+                if response.code == Packet.Code.OK:
                     print("Succesfully connected to the server")
+                    self.connection.set_authorised(True)
                     break
-                elif response == "UNCORRECT":
-                    print("Not correct. Try again.")
+                elif response.code == Packet.Code.ERROR:
+                    if isinstance(response.data, dict) and "error" in response.data:
+                        print(response.data["error"])
+                    else:
+                        print("Not correct credintials. Try again.")
+                else:
+                    return None
         else:
             return None
+        
     def handle_session_connection(self, session_id):
             print(f"Connected to session #{session_id}.\nStarting game.")
 

@@ -1,13 +1,24 @@
-from json import dump as jdump, load as jload
 from socket import socket
-from typing import Union
+from time import sleep
+from enum import Enum
+from typing import Optional
 from queue import Queue
 from threading import Thread
 from settings import *
+from network import Network
+from packet import Packet
 from log import Log
 from game_session import Session
 
 class User: 
+    class UserConnectionStatus(Enum):
+        CONNECTED = 0,
+        DISCONNECTED = 1
+        BANNED = 2
+        REACHED_USERS_LIMIT = 3
+        REGISTER_REQUIRED = 4
+        AUTHORIZATION_REQUIRED = 5
+
     users = {} # key: Server, value: set[Users]
 
     waiting_players = Queue()
@@ -43,55 +54,47 @@ class User:
     def __init__(self, server, conn : socket, addr) -> None:
         self.server = server
         
-        self.is_connected = True
+        #self.is_connected = True
 
-        self.conn = conn
-        self.addr = addr
+        self.net = Network(conn, addr, self._handle_user, self.on_disconnect)
+        self.net.set_connected()
 
-        self.ip = self.addr[0]
-
-        data = self.conn.recv(1024).decode("UTF-8")
-        data = data.split(",")
-        self.name : str = data[0]
-        self.id : str = data[1]
-        self.logger = Log.User(self.ip, self.name)
-
-        if User.get_user_by_name(self.server, self.name):
-            self.logger.error(f"A user with the same name already exists.")
-            self.send_data("NAME_ALREADY_IN_USE")
+        # 
+        if len(User.get_users(self.server)) > MAX_USERS:
+            Log.warning("The connection request was rejected because the maximum number of users has been reached.")
+            self.net.send(Packet(Packet.Code.ERROR, {"error_code": Network.Errors.REACHED_USERS_LIMIT.value}))
             self.disconnect_user()
             return
-        if len(self.name) >= MAX_USER_NAME_LENGTH:
-            self.logger.error(f"Username exceeds the maximum length of {MAX_USER_NAME_LENGTH} characters.")
-            self.send_data("NAME_TOO_LONG")
-            self.disconnect_user()
-            return
-        
-        User.append_user_in_list(self.server, self)
-        self.logger.info(f"New user connected IP: \"{self.ip}\".")
-        
-        if self.is_in_black_list():
-            self.logger.error(f"Disconnecting user because is in black list.")
-            self.disconnect_user(True)
-            return
-        
-        self.send_data("CONNECTED")
 
-    def recieve_data(self) -> str:
-        if not self.is_connected or self.conn.fileno() != -1:
-            data = self.conn.recv(1024).decode("UTF-8")
-            return data
+        response = self.net.get()
+        if response.code == Packet.Code.USERNAME_AND_ID:
+            self.name : str = response.data["name"]
+            self.id : str = response.data["uid"]
+
+            self.logger = Log.User(self.net.ip, self.name)
+
+            if User.get_user_by_name(self.server, self.name):
+                self.logger.error(f"A user with the same name already exists.")
+                self.net.send(Packet(Packet.Code.ERROR, {"error_code": Network.Errors.NAME_ALREADY_IN_USE.value}))
+                self.disconnect_user()
+                return
+            if len(self.name) >= MAX_USER_NAME_LENGTH:
+                self.logger.error(f"Username exceeds the maximum length of {MAX_USER_NAME_LENGTH} characters.")
+                self.net.send(Packet(Packet.Code.ERROR, {"error_code": Network.Errors.NAME_TOO_LONG.value}))
+                self.disconnect_user()
+                return
+        
+            User.append_user_in_list(self.server, self)
+            self.logger.info(f"New user connected IP: \"{self.net.ip}\".")
+        
+            if self.is_in_black_list():
+                self.logger.error(f"Disconnecting user because is in black list.")
+                self.disconnect_user(True)
+                return
+        
+            self.net.send(Packet(Packet.Code.STATUS, self.UserConnectionStatus.CONNECTED.value))
         else:
-            try:
-                self.logger.error("Error: Failed to receive because, connection is already closed.")
-            except AttributeError:
-                pass
-            return None
-        
-    def send_data(self, string : str) -> None:
-        #print("SEdning")
-        self.conn.send(string.encode("UTF-8"))
-        #print("Sended")
+            self.disconnect_user()
         
     def is_in_black_list(self):
         black_list = self.server.server_data.black_list.get()
@@ -113,60 +116,64 @@ class User:
             return True
         else:
             return False
+    
+    def get_ip_address(self):
+        return self.net.ip
 
     def _loggin(self):
         user = self.server.server_data.users.find(self.name)
         if user:
-            self.send_data("PASSWORD_REQUIRED")
+            self.net.send(Packet(Packet.Code.STATUS, self.UserConnectionStatus.AUTHORIZATION_REQUIRED.value))
             
             attemptions = 0
             while attemptions <= 3:
-                password = self.recieve_data()
-                if password.startswith("PASSWORD "):
-                    password = password.replace("PASSWORD ", "")
-            
+                response = self.net.get()
+                if response.code == Packet.Code.PASSWORD and "password" in response.data:
+                    password = response.data["password"]
+
                     if password == user["password"]:
                         self.server.server_data.users.update_login(self.name, self.id)
                         self.logger.info("The user has successfully logged in")
+                        self.net.send(Packet(Packet.Code.OK))
                         return True
-                elif password == "PING":
-                    continue
+                    else:
+                        self.net.send(Packet(Packet.Code.ERROR))
                 else:
-                    self.send_data("UNCORRECT")
+                    return False
                 attemptions += 1
 
         self.disconnect_user()
         return False
 
     def _register(self):
-        self.send_data("REGISTER_REQUIRED")
-        
+        self.net.send(Packet(Packet.Code.STATUS, self.UserConnectionStatus.REGISTER_REQUIRED.value))
+
         attemptions = 0
         while attemptions <= 3:
-            password = self.recieve_data()
-            if password.startswith("PASSWORD "):
-                password = password.replace("PASSWORD ", "")
+            response = self.net.get()
+            if response.code == Packet.Code.PASSWORD and "password" in response.data:
+                password = response.data["password"]
+
                 self.server.server_data.users.add(self.name, self.id, password)
                 self.logger.info("The user has successfully signed in")
+                self.net.send(Packet(Packet.Code.OK))
                 return True
-            elif password == "PING":
-                continue
             else:
-                self.send_data("UNCORRECT")
-                attemptions += 1
+                return False
+            attemptions += 1
         return False
         
     def disconnect_user(self, is_banned = False):
         try:
             if is_banned:
-                self.send_data("BANNED")
+                self.net.send(Packet(Packet.Code.STATUS, self.UserConnectionStatus.BANNED.value))
             else:
-                self.send_data("DISCONNECT")
-        except Exception:
-            pass
+                self.net.send(Packet(Packet.Code.STATUS, self.UserConnectionStatus.DISCONNECTED.value))
+        except Exception as e:
+            if DEBUG:
+                Log.exception("Failed to send 'disconnect' packet to user", e)
             
-        self.conn.close()
-        self.is_connected = False
+        self.net.disconnect()
         User.remove_user_from_list(self.server, self)
         
     def ban(self) -> bool:
@@ -182,57 +189,53 @@ class User:
         except Exception as e:
             Log.exception("An error occurred when removing a player from the banned players list", e)
     
+    def on_disconnect(self):
+        try:
+            self.disconnect_user()
+        except Exception as e:
+            pass
+        finally:
+            try:
+                self.logger.info(f"User has been disconnected.")
+            except AttributeError:
+                pass
+
     @Log.log_logger.catch
-    def _handle_user(self):
-        if not self.is_connected:
+    def _handle_user(self, request) -> Optional[Packet]:
+        if not self.net.connected():
             return
         try:
             if self.is_registred():
                 if not self.is_logged():
                     if not self._loggin():
-                        return
+                        return None    
             else:
                 if not self._register():
+                    return None
+
+            # User.waiting_players.put(self)
+            
+            # if User.waiting_players.qsize() >= 2:
+            #     player1 = User.waiting_players.get()
+            #     player2 = User.waiting_players.get()
+            
+            #     session = Session(self.server, [player1, player2])
+            #     session.start()
+            if request.code == Packet.Code.PING:
+                if self.is_in_black_list():
+                    self.disconnect_user(True)
                     return
-
-            self.conn.send("OK".encode("UTF-8"))
-
-            User.waiting_players.put(self)
-            
-            if User.waiting_players.qsize() >= 2:
-                player1 = User.waiting_players.get()
-                player2 = User.waiting_players.get()
-            
-                session = Session(self.server, [player1, player2])
-                session.start()
-            while True:
-                data = self.recieve_data()
-
-                if data:
-                    if DEBUG:
-                        self.logger.debug(f"Recivied data [{data}]")
-                    if data == "PING":
-                        if self.is_in_black_list():
-                            self.disconnect_user(True)
-                            return
                         
-                        self.send_data("OK")
-                        
-                    if data == "DISCONNECT":
-                        break
-                else:
-                    break
+                return Packet(Packet.Code.OK)
+            if request.code == Packet.Code.STATUS:
+                if request.data == self.UserConnectionStatus.DISCONNECTED.value:
+                    return None
         except ConnectionResetError:
             pass
         except Exception as e:
             self.logger.exception(f"An error occurred while processing requests from user", e)   
-        finally:
-            try:
-                self.disconnect_user()
-            except Exception as e:
-                pass
-            finally:
-                self.logger.info(f"User has been disconnected.")   
-
+        
+        return None
     def handle_user(self):
-        Thread(target=self._handle_user, daemon=True).start()
+        Thread(target=self.net.handle, daemon=True).start()
+        pass#Thread(target=self._handle_user, daemon=True).start()

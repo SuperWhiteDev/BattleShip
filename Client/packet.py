@@ -1,5 +1,6 @@
 from enum import Enum
 from pickle import dumps, loads
+
 class Packet:
     class Code(Enum):
         UNDEFINED = 0
@@ -7,7 +8,8 @@ class Packet:
         ERROR = 2
         PING = 3
         STATUS = 4
-        USERNAME_AND_ID = 3
+        USERNAME_AND_ID = 5
+        PASSWORD = 6
 
         @classmethod
         def to_code(cls, value : int) -> "Code":
@@ -19,6 +21,9 @@ class Packet:
     def __init__(self, *args) -> None:
         if len(args) == 1 and isinstance(args[0], bytes):
             self.parse(args[0])
+        elif len(args) == 1 and isinstance(args[0], self.Code):
+            self.code = args[0]
+            self.data = None
         elif len(args) == 2:
             self.code = args[0]
             self.data = args[1]
