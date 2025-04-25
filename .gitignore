@@ -1,5 +1,7 @@
-logs.log
-
-config.json
-
+# Byte-compiled
 __pycache__/
+Website/
+
+*.log
+*.sqlite3
+config.json

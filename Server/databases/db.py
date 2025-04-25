@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+
 class DatabaseInterface(ABC):
     @abstractmethod
     def create_table(self, table_name, fields):
@@ -22,5 +23,5 @@ class DatabaseInterface(ABC):
         pass
 
     @abstractmethod
-    def set(self, table_name : str, field: str, value, conditions: dict) -> int:
+    def set(self, table_name: str, field: str, value, conditions: dict) -> int:
         pass

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+
 class DataModel(ABC):
     @abstractmethod
     def _create_table(self) -> None:

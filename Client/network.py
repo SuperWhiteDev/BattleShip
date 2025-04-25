@@ -1,35 +1,52 @@
 import socket
+from queue import Queue
 from threading import Thread
-from typing import Callable
+from typing import Callable, Optional
 from enum import Enum
+from contextlib import suppress
 from time import sleep
 from user import User
 from packet import Packet
+from select import select
 
 class Network:
     class ConnectionStatus(Enum):
         NOT_CONNECTED = 0
         CONNECTED = 1
         CONNECTING = 2
+
     class Errors(Enum):
         NAME_ALREADY_IN_USE = 0
         NAME_TOO_LONG = 1
         REACHED_USERS_LIMIT = 2
-    class UserConnectionStatus(Enum):
-        CONNECTED = 0,
-        DISCONNECTED = 1
-        BANNED = 2
-        REACHED_USERS_LIMIT = 3
-        REGISTER_REQUIRED = 4
-        AUTHORIZATION_REQUIRED = 5
+        UNEXPECTED_PACKET = 3
+        UNCORRECT_PACKET = 4
+    
+    class ErrorMessages(Enum):
+        PLAYER_NOT_IN_ANY_SESSION = 0
 
-    def __init__(self, user : User, request_handler: Callable[[str], str]) -> None:
+    class UserConnectionStatus(Enum):
+        CONNECTED = 1
+        DISCONNECTED = 2
+        BANNED = 3
+        REACHED_USERS_LIMIT = 4
+        REGISTER_REQUIRED = 5
+        AUTHORIZATION_REQUIRED = 6
+        FIND_NEW_SESSION = 8
+        LEAVE_SESSION = 9
+
+    def __init__(self, user: User, request_handler: Callable[[str], str]) -> None:
         self.user = user
 
         self.request_handler = request_handler
-        self.connection_status : Network.ConnectionStatus = Network.ConnectionStatus.NOT_CONNECTED
+        self.connection_status: Network.ConnectionStatus = (
+            Network.ConnectionStatus.NOT_CONNECTED
+        )
 
         self.is_authorised = False
+
+        self.set_default_packet()
+        self.next_send_packets = Queue(25)
 
     def connect(self, ip: str, port: int, max_attempts: int = 5) -> bool:
         if not max_attempts:
@@ -44,8 +61,12 @@ class Network:
 
             self.connection_status = Network.ConnectionStatus.CONNECTING
 
-            response = self.get(Packet(Packet.Code.USERNAME_AND_ID, {"name": self.user.name, "uid": self.user.uid}))
-            
+            response = self.get(
+                Packet(
+                    Packet.Code.USERNAME_AND_ID,
+                    {"name": self.user.name, "uid": self.user.uid},
+                )
+            )
             if response.code == Packet.Code.STATUS:
                 if response.data == Network.UserConnectionStatus.CONNECTED.value:
                     print("Succesfully connected to the server")
@@ -60,15 +81,23 @@ class Network:
                     return False
             elif response.code == Packet.Code.ERROR:
                 if response.data["error_code"] == self.Errors.REACHED_USERS_LIMIT.value:
-                    print("Error connecting to the server because server is full at the moment.")
+                    print(
+                        "Error connecting to the server because server is full at the moment."
+                    )
                     self.disconnect()
                     return False
-                elif response.data["error_code"] == self.Errors.NAME_ALREADY_IN_USE.value:
-                    print("Error connecting to the server because another user under your name is already connected to the server")
+                elif (
+                    response.data["error_code"] == self.Errors.NAME_ALREADY_IN_USE.value
+                ):
+                    print(
+                        "Error connecting to the server because another user under your name is already connected to the server"
+                    )
                     self.disconnect()
                     return False
                 elif response.data["error_code"] == self.Errors.NAME_TOO_LONG.value:
-                    print("Error connecting to the server because your username exceeds the username length limit for a user on the server")
+                    print(
+                        "Error connecting to the server because your username exceeds the username length limit for a user on the server"
+                    )
                     self.disconnect()
                     return False
             else:
@@ -77,13 +106,12 @@ class Network:
                 return False
         except Exception as e:
             print(e)
-        
+
         print(f"Failed connect to the server IP: {ip}, PORT: {port}.")
         sleep(1.0)
 
         print("Attempting to reconnect...")
-        return self.connect(ip, port, max_attempts-1)
-        
+        return self.connect(ip, port, max_attempts - 1)
 
     def disconnect(self):
         self.connection_status = Network.ConnectionStatus.NOT_CONNECTED
@@ -93,58 +121,92 @@ class Network:
 
     def connected(self) -> bool:
         return self.connection_status == Network.ConnectionStatus.CONNECTED
-    
+
     def connecting(self) -> bool:
         return self.connection_status == Network.ConnectionStatus.CONNECTING
-    
+
     def authorised(self) -> bool:
         return self.is_authorised
-    
-    def set_authorised(self, state : bool) -> None:
+
+    def set_authorised(self, state: bool) -> None:
         self.is_authorised = state
-        
+
+    def set_default_packet(self, packet: Optional[Packet] = None) -> None:
+        if packet:
+            self.default_packet = packet
+        else:
+            self.default_packet = Packet(Packet.Code.PING, None)
+    
+    def delay_send(self, packet : Optional[Packet]) -> None:
+        self.next_send_packets.put(packet)
+
     def handle(self):
         try:
             while self.connected():
                 request = self.get()
                 if request:
-                    response = self.request_handler(request)
-                    if response:
-                        self.send(response)
-                else:
-                    print("It seems the server doesn't work now.")
-                    break            
+                    if request.code == Packet.Code.UNDEFINED:
+                        print("It seems the server doesn't work now.")
+                        break
+                    else:
+                        response = self.request_handler(request)
+                        if response:
+                            self.send(response)
         finally:
-            try:
+            with suppress(Exception):
                 self.send(Packet.Code.STATUS, Network.UserConnectionStatus.DISCONNECTED)
-            except:
-                pass
 
             print("Disconnected from the server.")
             self.disconnect()
 
-    
-    def get(self, data : str = None) -> Packet:
+    def _flush_socket(self):
+        while True:
+            ready_to_read, _, _ = select([self.socket], [], [], 0)
+            if ready_to_read:
+                try:
+                    flushed = self.socket.recv(1024)
+                    if flushed:
+                        return flushed
+                    else:
+                        break
+                except socket.error:
+                    break
+            else:
+                break
+        return None
+
+    def get(self, data: str = None) -> Packet:
         if not self.connected() and not self.connecting():
             return Packet(Packet.Code.UNDEFINED)
-        
+
         try:
+            buffer = self._flush_socket()
+            if buffer:
+                return Packet(buffer)
+            
             if data:
                 self.send(data)
+            elif not self.next_send_packets.empty():
+                self.send(self.next_send_packets.get())
+            elif self.default_packet:
+                self.send(self.default_packet)
             else:
                 self.send(Packet(Packet.Code.PING, None))
-            
+
             resp = self.socket.recv(1024)
             response = Packet(resp)
 
+            # print(f"Get {response}")
+
             return response
         except socket.timeout:
+            print("Timeout")
             return Packet(Packet.Code.UNDEFINED)
         except Exception as e:
-            print(f"Error checking server status: {e}")
+            print(f"An error occurred while waiting for a response from the server: {e}")
             return Packet(Packet.Code.UNDEFINED)
-    
-    def send(self, data : Packet) -> bool:
+
+    def send(self, data: Packet) -> bool:
         if not self.connected() and not self.connecting():
             return False
         
@@ -155,5 +217,3 @@ class Network:
             return False
         else:
             return True
-    
-    

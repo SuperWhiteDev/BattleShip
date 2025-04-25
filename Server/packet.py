@@ -1,6 +1,7 @@
 from enum import Enum
 from pickle import dumps, loads
 
+
 class Packet:
     class Code(Enum):
         UNDEFINED = 0
@@ -10,9 +11,10 @@ class Packet:
         STATUS = 4
         USERNAME_AND_ID = 5
         PASSWORD = 6
+        SESSION_DATA = 7
 
         @classmethod
-        def to_code(cls, value : int) -> "Code":
+        def to_code(cls, value: int) -> "Code":
             for member in cls:
                 if member.value == value:
                     return member
@@ -31,12 +33,18 @@ class Packet:
             self.code = Packet.Code.UNDEFINED
             self.data = None
 
+    def __str__(self) -> str:
+        return f"Packet: Code={self.code}, data={self.data}"
+
     def get_code(self):
         return self.code
+
     def get_data(self):
         return self.data
-    def set_code(self, code : "Code"):
+
+    def set_code(self, code: "Code"):
         self.code = code
+
     def set_data(self, data):
         self.data = data
 
@@ -44,23 +52,19 @@ class Packet:
         if not (0 <= self.code.value <= 255):
             raise ValueError("The code must be a valid value between 0 and 255")
         code = bytes([self.code.value])
-        
+
         if self.data:
-            return b"H"+code+dumps(self.data)
+            return b"H" + code + dumps(self.data)
         else:
-            return b"H"+code
-        
+            return b"H" + code
+
     def parse(self, packet: bytes) -> None:
         if packet[0:1] != b"H":
             raise ValueError("This package is not valid!")
-        
+
         self.code = Packet.Code.to_code(int(packet[1]))
 
         if len(packet) > 2:
             self.data = loads(packet[2:])
         else:
             self.data = None
-
-
-
-    
