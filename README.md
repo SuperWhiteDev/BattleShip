@@ -43,7 +43,7 @@ The server part of the project allows you to expand functionality through custom
 
 1. **Clone the Repository:**  
 ```bash
-git clone <repository_url>
+git clone <https://github.com/SuperWhiteDev/BattleShip>
 
 cd battleship
 
