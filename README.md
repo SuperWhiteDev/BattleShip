@@ -45,13 +45,17 @@ The server part of the project allows you to expand functionality through custom
 ```bash
 git clone <https://github.com/SuperWhiteDev/BattleShip>
 
-cd battleship
+cd BattleShip
 
+# For Linux, macOS
 python3 -m venv venv
 source venv/bin/activate
 
-pip install -r requirements.txt
+# For Windows
+python -m venv venv
+venv\Scripts\activate
 
+pip install -r requirements.txt
 ```
 
 ## Usage

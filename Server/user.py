@@ -366,8 +366,10 @@ class User:
                     return None
                 if request.data == self.UserConnectionStatus.FIND_NEW_SESSION.value:
                     self.disconnect_session(True)
+                    return Packet(Packet.Code.OK)
                 if request.data == self.UserConnectionStatus.LEAVE_SESSION.value:
                     self.disconnect_session(False)
+                    return Packet(Packet.Code.OK)
 
             if request.code == Packet.Code.SESSION_DATA:
                 # Forward session-related data to the user's current game session.

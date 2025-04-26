@@ -95,6 +95,54 @@ class UI:
                     print(e)
                     continue
 
+    def create_user(self):
+        self.game.user.set_name(input("Enter your username: "))
+
+    def get_server(self) -> tuple[str, int]:
+        def display_available_servers():
+            print("Servers available:")
+
+            for i, server in enumerate(self.game.config.servers):
+                print(f"{i + 1}. {server['name']}")
+
+        display_available_servers()
+
+        print('\n"add". Add new server')
+
+        while True:
+            user_in = (
+                input('Enter server id or "add" to append new server to list: ')
+                .strip()
+                .lower()
+            )
+
+            if user_in == "add":
+                self.add_new_server()
+                clear_console()
+                return self.get_server()
+            else:
+                try:
+                    server_id = int(user_in) - 1
+                except ValueError:
+                    continue
+
+                try:
+                    server = self.game.config.servers[server_id]
+                except IndexError:
+                    continue
+                else:
+                    return (server["ip"], int(server["port"]))
+
+    def add_new_server(self) -> None:
+        name = input("Enter what you want to name the server: ")
+        ip = input("Enter server IPv4 address: ").strip()
+        port = (
+            input("Enter server port(enter to use default port 64221): ").strip()
+            or 64221
+        )
+
+        self.game.config.add_server(name, ip, port)
+
     def display_field(self, field : BattleField):
         """
         Displays a field (2D list) on the console.

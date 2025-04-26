@@ -250,6 +250,7 @@ class Session:
         self.data = Queue(100)
 
         self.session_start_time = time()
+        self.session_end_time = None
 
         Session.sessions.append(self)
 
@@ -265,7 +266,10 @@ class Session:
             return None
 
     def get_session_duration(self) -> float:
-        return time() - self.session_start_time
+        if self.session_end_time is None:
+            return time() - self.session_start_time
+        else:
+            return self.session_end_time - self.session_start_time
 
     def get_fields(self) -> dict["User", tuple[BattleField]]:
         try:
@@ -300,6 +304,8 @@ class Session:
         self.logger.broadcast("Stopping game session.")
         self.logger.info("Stopping game session.")
 
+        self.session_end_time = time()
+
         for player in self.players:
             player.disconnect_session(False)
             if player.net.connected():
@@ -310,6 +316,9 @@ class Session:
                             {"code": self.GameDataCode.SESSION_CLOSED.value},
                         )
                     )
+                    longest_player_match = self.server.server_data.users.get_stat_longest_match(player.name)
+                    if longest_player_match > self.get_session_duration():
+                        self.server.server_data.users.set_stat_hits(player.name, self.get_session_duration())
                 except Exception:
                     continue
 
@@ -335,6 +344,8 @@ class Session:
                         },
                     )
                 )
+
+                self.server.server_data.users.set_stat_matches(player.name, self.server.server_data.users.get_stat_matches(player.name) + 1)
 
             self.battle_fields = {player: None for player in self.players}
             self.phase = "setup"
@@ -580,12 +591,15 @@ class Session:
                                                 )
                                             )
 
+                                            self.server.server_data.users.set_stat_wins(player.name, self.server.server_data.users.get_stat_wins(player.name) + 1)
+
                                             self.winner = player
 
                                             for pl in self.players:
                                                 if pl == self.winner:
                                                     continue
                                                 self.losers.append(pl)
+                                                self.server.server_data.users.set_stat_defeats(pl.name, self.server.server_data.users.get_stat_defeats(pl.name) + 1)
                                         else:
                                             if (
                                                 shoot_state
@@ -607,6 +621,7 @@ class Session:
                                                         },
                                                     )
                                                 )
+                                                self.server.server_data.users.set_stat_hits(player.name, self.server.server_data.users.get_stat_hits(player.name) + 1)
                                             elif (
                                                 shoot_state
                                                 == BattleField.ShootState.MISS
@@ -627,6 +642,9 @@ class Session:
                                                         },
                                                     )
                                                 )
+
+                                                self.server.server_data.users.set_stat_misses(player.name, self.server.server_data.users.get_stat_misses(player.name) + 1)
+
                                                 self.player_attacks = (
                                                     self.player_attacks + 1
                                                 ) % len(self.players)

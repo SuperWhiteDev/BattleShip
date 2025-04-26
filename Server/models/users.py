@@ -16,6 +16,12 @@ class Users(DataModel):
                 "last_login_id": "VARCHAR(36) NOT NULL",
                 "password": "VARCHAR(40)",
                 "register_date": "DATETIME NOT NULL",
+                "stat_wins": "INT NOT NULL DEFAULT 0",
+                "stat_defeats": "INT NOT NULL DEFAULT 0",
+                "stat_matches": "INT NOT NULL DEFAULT 0",
+                "stat_longest_match": "INT NOT NULL DEFAULT 0",
+                "stat_hits": "INT NOT NULL DEFAULT 0",
+                "stat_misses": "INT NOT NULL DEFAULT 0",
             },
         )
 
@@ -51,6 +57,81 @@ class Users(DataModel):
         return (
             self.data.database.set(
                 "users", "last_login_id", user_id, {"user_name": user_name}
+            )
+            > 0
+        )
+
+    def get_stat_wins(self, user_name: str) -> int:
+        user = self.find(user_name)
+
+        return user["stat_wins"] if user and "stat_wins" in user else 0
+
+    def set_stat_wins(self, user_name: str, value: int) -> bool:
+        return (
+            self.data.database.set(
+                "users", "stat_wins", value, {"user_name": user_name.lower()}
+            )
+            > 0
+        )
+
+    def get_stat_defeats(self, user_name: str) -> int:
+        user = self.find(user_name)
+        return user["stat_defeats"] if user and "stat_defeats" in user else 0
+
+    def set_stat_defeats(self, user_name: str, value: int) -> bool:
+        return (
+            self.data.database.set(
+                "users", "stat_defeats", value, {"user_name": user_name.lower()}
+            )
+            > 0
+        )
+
+    def get_stat_matches(self, user_name: str) -> int:
+        user = self.find(user_name)
+        return user["stat_matches"] if user and "stat_matches" in user else 0
+
+    def set_stat_matches(self, user_name: str, value: int) -> bool:
+        return (
+            self.data.database.set(
+                "users", "stat_matches", value, {"user_name": user_name.lower()}
+            )
+            > 0
+        )
+
+    def get_stat_longest_match(self, user_name: str) -> int:
+        user = self.find(user_name)
+        return (
+            user["stat_longest_match"] if user and "stat_longest_match" in user else 0
+        )
+
+    def set_stat_longest_match(self, user_name: str, value: int) -> bool:
+        return (
+            self.data.database.set(
+                "users", "stat_longest_match", value, {"user_name": user_name.lower()}
+            )
+            > 0
+        )
+
+    def get_stat_hits(self, user_name: str) -> int:
+        user = self.find(user_name)
+        return user["stat_hits"] if user and "stat_hits" in user else 0
+
+    def set_stat_hits(self, user_name: str, value: int) -> bool:
+        return (
+            self.data.database.set(
+                "users", "stat_hits", value, {"user_name": user_name.lower()}
+            )
+            > 0
+        )
+
+    def get_stat_misses(self, user_name: str) -> int:
+        user = self.find(user_name)
+        return user["stat_misses"] if user and "stat_misses" in user else 0
+
+    def set_stat_misses(self, user_name: str, value: int) -> bool:
+        return (
+            self.data.database.set(
+                "users", "stat_misses", value, {"user_name": user_name.lower()}
             )
             > 0
         )

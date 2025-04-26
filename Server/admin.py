@@ -34,6 +34,8 @@ class Admin:
             output = Commands.help(self.server, command)
         elif lower_command == "users":
             output = Commands.users_list(self.server, command)
+        elif lower_command.startswith("user"):
+            output = Commands.user(self.server, command)
         elif lower_command == "ban-list":
             output = Commands.ban_list(self.server, command)
         elif lower_command == "white-list":
@@ -63,7 +65,13 @@ class Admin:
         elif lower_command == "restart":
             output = Commands.restart_server(self.server, command)
         else:
-            output = f'Unknown command: "{command}". Enter "help" to see commands list.'
+            found = False
+            for user_command, func in self.server.user_commands.items():
+                if lower_command.startswith(user_command.lower()):
+                    found = True
+                    output = Commands.call(func, command)
+            if not found:
+                output = f'Unknown command: "{command}". Enter "help" to see commands list.'
 
         return output if output is not None else f'Error: while handling command "{command}"!'
 

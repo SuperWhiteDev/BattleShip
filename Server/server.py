@@ -18,6 +18,7 @@ from settings import (
 from user import User
 from admin import Admin
 from data import Data
+from plugins_loader import load_plugins
 
 class Server:
     @Log.log_logger.catch
@@ -45,7 +46,15 @@ class Server:
         except Exception as e:
             Log.exception("Failed to initialize server", e)
             return
-
+        
+        context = {
+            "server": self,
+            "User": User,
+            "Log": Log,
+            "server_data": self.server_data
+        }
+        self.plugins, self.user_commands = load_plugins(context)
+        
         # Try binding the server socket repeatedly, handling potential OS/port issues
         for _ in range(INIT_ATTEMPTS):
             try:

@@ -12,8 +12,8 @@ class Commands:
             try:
                 return command_function(server, *Commands._parse_command(command))
             except Exception as e:
-                if DEBUG:
-                    Log.exception(f"Failed to execute command '{command}'", e)
+                #if DEBUG:
+                Log.exception(f"Failed to execute command '{command}'", e)
                 return None
 
         return wrapper
@@ -34,6 +34,9 @@ class Commands:
                     args.append(arg[0])
 
         return args, kwargs
+    
+    def call(func, command : str) -> str:
+        return func(*Commands._parse_command(command))
 
     @staticmethod
     @_command
@@ -76,6 +79,34 @@ Example:
             output += "\n"
         else:
             output += "No connected clients"
+
+        return output
+    
+    @staticmethod
+    @_command
+    def user(server, args, kwargs) -> str:
+        output = ""
+
+        name = kwargs.get("id") or (args[0] if args else None)
+        if name:
+            wins = server.server_data.users.get_stat_wins(name)
+            defets = server.server_data.users.get_stat_defeats(name)
+            matches = server.server_data.users.get_stat_matches(name)
+            longest_match = server.server_data.users.get_stat_longest_match(name)
+            hits = server.server_data.users.get_stat_hits(name)
+            misses = server.server_data.users.get_stat_misses(name)
+
+            output += f"{name} Statistics:\n"
+            output += f"Wins - {wins}\n"
+            output += f"Defeats - {defets}\n"
+            output += f"Matches - {matches}\n"
+            output += f"Longest match - {longest_match}\n"
+            output += f"Hits - {hits}\n"
+            output += f"Misses - {misses}"
+        else:
+            output += (
+                "Error: Specify the user name (e.g., 'user <user_name>')."
+            )
 
         return output
 
@@ -254,7 +285,7 @@ Example:
                     output += f"Now the player {session.get_player_whose_turn().name} is shooting." 
         else:
             output += (
-                "Error: Specify the session id to close (e.g., 'stop-session <id>')."
+                "Error: Specify the session id (e.g., 'session <id>')."
             )
 
         return output
